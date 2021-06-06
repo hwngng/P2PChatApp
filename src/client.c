@@ -36,6 +36,23 @@ int clientState = NA;
 pthread_mutex_t onlineLstMutex;
 pthread_mutex_t chatLstMutex;
 
+void printSentMsg (chat_msg_t* msg) {
+    struct tm* sendTime;
+    char sendTimeStr[30];
+
+    sendTime = localtime(&msg->at);
+    trimRight(asctime_r(sendTime, sendTimeStr));
+    printf("<-- To %s (%s): %s\n", msg->to, sendTimeStr, msg->txt);
+}
+
+void printReceivedMsg (chat_msg_t* msg) {
+    struct tm* sendTime;
+    char sendTimeStr[30];
+
+    sendTime = localtime(&msg->at);
+    trimRight(asctime_r(sendTime, sendTimeStr));
+    printf("--> From %s (%s): %s\n", msg->from, sendTimeStr, msg->txt);
+}
 
 int getTCPSockfdByStruct (struct sockaddr_in addr) {
     int sockfd;
@@ -166,16 +183,35 @@ void* sendChatMsg (void* accVoid) {
     struct tm* sendTime;
     char sendTimeStr[30];
     char* logPrefix = "Send chat message";
+    chat_msg_node_t* head;
+    chat_msg_node_t* p;
+    char path[100];
 
     acc = (account_t*) accVoid;
+    clearCL();
+    
+    head = createMsgLinkedList();
+    head = readConversation(head, currAcc.usr, acc->usr, getMsgFilePath(path, currAcc.usr));
+    p = head->next;
+    while (p != NULL) {
+        if (strcasecmp(p->msg->from, currAcc.usr) == 0) {
+            printSentMsg(p->msg);
+        } else {
+            printReceivedMsg(p->msg);
+        }
+
+        p = p->next;
+    }
+    freeMsgLinkedList(head);
+
     strcpy(chatMsg.from, currAcc.usr);
     strcpy(chatMsg.token, currAcc.token);
     strcpy(chatMsg.to, acc->usr);
     requestMsg.type = CHATMSG;
     sendSockFD = getTCPSockfdByStruct(acc->usrAddr);
-    snprintf(msgFormatStr, 20, "%%%ds", MSGLEN-1);      // read at most MSGLEN - 1 character
+    snprintf(msgFormatStr, 20, "%%%d[^\n]", MSGLEN-1);      // read at most MSGLEN - 1 character
     
-    clearCL();
+    // clearCL();
     syslog(LOG_DEBUG, "%s - Send to address (%s:%hu)", logPrefix, inet_ntoa(acc->usrAddr.sin_addr), ntohs(acc->usrAddr.sin_port));
     stopChatting = 0;
     do {
@@ -201,9 +237,8 @@ void* sendChatMsg (void* accVoid) {
             syslog(LOG_DEBUG, "%s - User %s sent to %s along with token = %s (sentBytes = %d)", logPrefix, currAcc.usr, acc->usr, currAcc.token, sentBytes);
             if (sentBytes > 0) {
                 // TODO add sent message in chat window
-                sendTime = localtime(&chatMsg.at);
-                trimRight(asctime_r(sendTime, sendTimeStr));
-                printf("<-- To %s (%s): %s\n", chatMsg.to, sendTimeStr, chatMsg.txt);
+                printSentMsg(&chatMsg);
+                appendChatFile(&chatMsg, getMsgFilePath(path, currAcc.usr));
             } else {
                 printf("[x] Cannot send chat message to %s\n", acc->usr);   
             }
@@ -213,17 +248,16 @@ void* sendChatMsg (void* accVoid) {
 
 }
 
-int clientMsgReceiver (int sockfd) {
+int clientMsgHandler (int sockfd) {
     net_msg_t requestMsg;
     net_msg_t responseMsg;
     chat_msg_t chatMsg;
     accNode_t* nodeSender;
     account_t* sender;
     int recvBytes, sentBytes;
-    struct tm* sendTime;
-    char sendTimeStr[30];
-    char* logPrefix = "Client message receiver";
+    char* logPrefix = "Client message handler";
     pthread_t tid;
+    char path[100];
 
     if (loginState == LOGINSUCCESS) {
         recvBytes = recvMsg(sockfd, &requestMsg);
@@ -237,13 +271,12 @@ int clientMsgReceiver (int sockfd) {
                     nodeSender = searchAccount(chatLst, chatMsg.from);
                     if (nodeSender != NULL) {
                         sender = nodeSender->acc;
-                        if (strcmp(sender->token, chatMsg.token) == 0) {
-                            syslog(LOG_WARNING, "%s - Received CHATMSG from invalid sender", logPrefix);
-                        } else {
-                            sendTime = localtime(&chatMsg.at);
-                            trimRight(asctime_r(sendTime, sendTimeStr));
+                        if (strcmp(sender->token, chatMsg.token) != 0) {
                             // TODO Do some actions to show message on the GUI
-                            printf("--> From %s (%s): %s\n", chatMsg.from, sendTimeStr, chatMsg.txt);
+                            printReceivedMsg(&chatMsg);
+                            appendChatFile(&chatMsg, getMsgFilePath(path, currAcc.usr));
+                        } else {
+                            syslog(LOG_WARNING, "%s - Received CHATMSG from invalid sender", logPrefix);
                         }
                     } else {
                         syslog(LOG_WARNING, "%s - Received CHATMSG from unconnected sender", logPrefix);
@@ -269,7 +302,7 @@ int clientMsgReceiver (int sockfd) {
                             syslog(LOG_DEBUG, "%s - Accept connect from %s (%s:%hu)", logPrefix, sender->usr, inet_ntoa(sender->usrAddr.sin_addr), ntohs(sender->usrAddr.sin_port));
                             
                             pthread_mutex_lock(&chatLstMutex);
-                            insertNode(chatLst, createNode(sender));
+                            insertNodeHead(chatLst, createNode(sender));
                             pthread_mutex_unlock(&chatLstMutex);
                             clientState = CHATTING;
                         }
@@ -288,7 +321,7 @@ int clientMsgReceiver (int sockfd) {
     return recvBytes;
 }
 
-void* clientMsgHandler (void* none) {
+void* clientMsgReceiver (void* none) {
     int nready, i, maxi, port, connfd, listenfd;
     socklen_t clilen;
     struct sockaddr_in cliaddr;
@@ -298,7 +331,7 @@ void* clientMsgHandler (void* none) {
     int INFTIM = -1;
     int on;
     int bindState;
-    char* logPrefix = "Client message handler";
+    char* logPrefix = "Client message receiver";
 
     cliSockState = NA;
 
@@ -399,7 +432,7 @@ void* clientMsgHandler (void* none) {
 
             // If the client is readable or errors occur
             if (clients[i].revents & (POLLRDNORM | POLLERR)) {
-                n = clientMsgReceiver(connfd);
+                n = clientMsgHandler(connfd);
                 if (n < 0) {
                     syslog(LOG_WARNING, "%s - Error from socket %d: %s", logPrefix, connfd, strerror(errno));
                     close(connfd);
@@ -452,14 +485,15 @@ void* connectChat (void* accVoid) {
             if (recvBytes > 0) {
                 switch (responseMsg.type) {
                     case ACCEPT:
-                        connAcc->sendSockFD = sockfd;
+                        // connAcc->sendSockFD = sockfd;
                         p = createNode(connAcc);
                         pthread_mutex_lock(&chatLstMutex);
-                        insertNode(chatLst, p);
+                        insertNodeHead(chatLst, p);
                         pthread_mutex_unlock(&chatLstMutex);
                         // TODO notify main thread to draw chat window
                         clientState = CHATTING;
                         printf("[+] User %s accepted to chat. Moving to chat interface...\n", connAcc->usr);
+                        close(sockfd);
                         sendChatMsg((void*)connAcc);
                         break;
                     case REJECT:
@@ -507,7 +541,7 @@ void showOnlineList () {
         p = onlineLst;
         pthread_mutex_lock(&onlineLstMutex);
         while (p->next != NULL) {
-            if (strcmp(p->next->acc->usr, currAcc.usr) != 0) {
+            if (strcasecmp(p->next->acc->usr, currAcc.usr) != 0) {
                 ++accCnt;
                 printf("%d. %s\n", accCnt, p->next->acc->usr);
                 memcpy(&accArr[accCnt-1], p->next->acc, sizeof(*p->next->acc));
@@ -575,71 +609,168 @@ void loginSuccess (int sockfd) {
 
 }
 
-void login () {
+void login (int sockfd) {
     int sentBytes;
     char* pwd;
     net_msg_t requestMsg;
     net_msg_t responseMsg;
     char* logPrefix = "Login";
     account_t tmp;
-
-    mainThreadSendSockFD = getTCPSockfd(SERVERADDR, SERVERPORT);
-    while (clientState != EXIT) {
-        clearCL();
-        printf("Enter username: ");
-        if (fgets(currAcc.usr, USRLEN, stdin) == NULL) {}
-        trim(currAcc.usr);
-        pwd = getpass("Enter password: ");
-        strcpy(currAcc.pwd, pwd);
-        trim(currAcc.pwd);
-        syslog(LOG_DEBUG, "%s - Identity: usr = %s, strlen(pwd) = %d), address (%s:%d)", logPrefix, currAcc.usr, strlen(currAcc.pwd),
-                inet_ntoa(currAcc.usrAddr.sin_addr), htons(currAcc.usrAddr.sin_port));
+    
+    clearCL();
+    printf("Enter username: ");
+    if (fgets(currAcc.usr, USRLEN, stdin) == NULL) {}
+    trim(currAcc.usr);
+    pwd = getpass("Enter password: ");
+    strcpy(currAcc.pwd, pwd);
+    trim(currAcc.pwd);
+    syslog(LOG_DEBUG, "%s - Identity: usr = %s, strlen(pwd) = %d), address (%s:%d)", logPrefix, currAcc.usr, strlen(currAcc.pwd),
+            inet_ntoa(currAcc.usrAddr.sin_addr), htons(currAcc.usrAddr.sin_port));
 
 
-        requestMsg.type = LOGIN;
-        requestMsg.len = serializeAuthAccount(requestMsg.payload, &currAcc);
-        sentBytes = sendMsg(mainThreadSendSockFD, &requestMsg);
+    requestMsg.type = LOGIN;
+    requestMsg.len = serializeAuthAccount(requestMsg.payload, &currAcc);
+    sentBytes = sendMsg(sockfd, &requestMsg);
+    
+    if (sentBytes > 0) { 
+        recvMsg(sockfd, &responseMsg);
+        switch (responseMsg.type) {
+            case LOGINSUCCESS:
+                deserializeAccessAccount(&tmp, responseMsg.payload);
+                syslog(LOG_DEBUG, "%s - Received LOGINSUCCESS message with token (usr = %s, token = %s)", logPrefix, tmp.usr, tmp.token);
+                authMsg.len = responseMsg.len;
+                memcpy(authMsg.payload, responseMsg.payload, responseMsg.len);
+                memcpy(currAcc.token, tmp.token, TOKENLEN+1);
+                loginSuccess(sockfd);
+                break;
+            case LOGINALREADY:
+                syslog(LOG_DEBUG, "%s - Received LOGINALREADY message", logPrefix);
+                // TODO show you have logged in with other machine
+                break;
+            case UNREGISTERED:
+                syslog(LOG_DEBUG, "%s - Received UNREGISTERED message", logPrefix);
+                // TODO show your account you entered does not exist 
+                break;
+            case WRONGIDENT:
+                syslog(LOG_DEBUG, "%s - Received WRONGINDENT message", logPrefix);
+                // TODO show you have entered wrong password
+                break;
+            case LOCKEDACC:
+                syslog(LOG_DEBUG, "%s - Received LOCKEDACC message", logPrefix);
+                // TODO show your account has been locked because of too many failed login attempts. Contact admin to resolve
+                break;
+            case DISABLED:
+                syslog(LOG_DEBUG, "%s - Received DISABLED message", logPrefix);
+                // TODO show your account was no longer available
+                break;
+            default:
+                syslog(LOG_DEBUG, "%s - Received unexpected message type with type code = %d", logPrefix, responseMsg.type);
+                // TODO show unexpected error occured, try to login again
+                break;
+        }
+    }
+    printf("Press <Enter> to return main menu...");
+    getchar();
+}
+
+void signup (int sockfd) {
+    int sentBytes;
+    char* pwd;
+    net_msg_t requestMsg;
+    net_msg_t responseMsg;
+    char* logPrefix = "Sign up";
+    account_t tmp;
+    char confirmPwd[PWDLEN];
+    
+    clearCL();
+    printf("Enter username: ");
+    if (fgets(currAcc.usr, USRLEN, stdin) == NULL) {}
+    trim(currAcc.usr);
+    pwd = getpass("Enter password: ");
+    strcpy(currAcc.pwd, pwd);
+    trim(currAcc.pwd);
+    pwd = getpass("Confirm password: ");
+    strcpy(confirmPwd, pwd);
+    trim(confirmPwd);
+    syslog(LOG_DEBUG, "%s - Identity: usr = %s, strlen(pwd) = %d, strlen(confirmPwd) = %d, address (%s:%d)", logPrefix, currAcc.usr, strlen(currAcc.pwd), strlen(confirmPwd),
+            inet_ntoa(currAcc.usrAddr.sin_addr), htons(currAcc.usrAddr.sin_port));
+
+    if (strcmp(currAcc.pwd, confirmPwd) == 0) {
+        requestMsg.type = REGISTER;
+        requestMsg.len = serializeSignupAccount(requestMsg.payload, &currAcc);
+        sentBytes = sendMsg(sockfd, &requestMsg);
         
         if (sentBytes > 0) { 
-            recvMsg(mainThreadSendSockFD, &responseMsg);
+            recvMsg(sockfd, &responseMsg);
             switch (responseMsg.type) {
-                case LOGINSUCCESS:
-                    deserializeAccessAccount(&tmp, responseMsg.payload);
-                    syslog(LOG_DEBUG, "%s - Received LOGINSUCCESS message with token (usr = %s, token = %s)", logPrefix, tmp.usr, tmp.token);
-                    authMsg.len = responseMsg.len;
-                    memcpy(authMsg.payload, responseMsg.payload, responseMsg.len);
-                    memcpy(currAcc.token, tmp.token, TOKENLEN+1);
-                    loginSuccess(mainThreadSendSockFD);
+                case REGSUCCESS:
+                    syslog(LOG_DEBUG, "%s - Received REGSUCCESS message", logPrefix);
+                    printf("Successfully signed up username '%s' !\n", currAcc.usr);
                     break;
-                case LOGINALREADY:
-                    syslog(LOG_DEBUG, "%s - Received LOGINALREADY message", logPrefix);
-                    // TODO show you have logged in with other machine
-                    break;
-                case UNREGISTERED:
-                    syslog(LOG_DEBUG, "%s - Received UNREGISTERED message", logPrefix);
-                    // TODO show your account you entered does not exist 
-                    break;
-                case WRONGIDENT:
-                    syslog(LOG_DEBUG, "%s - Received WRONGINDENT message", logPrefix);
-                    // TODO show you have entered wrong password
-                    break;
-                case LOCKEDACC:
-                    syslog(LOG_DEBUG, "%s - Received LOCKEDACC message", logPrefix);
-                    // TODO show your account has been locked because of too many failed login attempts. Contact admin to resolve
-                    break;
-                case DISABLED:
-                    syslog(LOG_DEBUG, "%s - Received DISABLED message", logPrefix);
-                    // TODO show your account was no longer available
+                case REGDUP:
+                    syslog(LOG_DEBUG, "%s - Received REGDUP message", logPrefix);
+                    printf("Username '%s' was not available !\n", currAcc.usr);
                     break;
                 default:
                     syslog(LOG_DEBUG, "%s - Received unexpected message type with type code = %d", logPrefix, responseMsg.type);
                     // TODO show unexpected error occured, try to login again
                     break;
             }
+        } else {
+            syslog(LOG_DEBUG, "%s - Cannot send message to server", logPrefix);
+            printf("Internal server error!\n", currAcc.usr);
         }
+    } else {
+        syslog(LOG_DEBUG, "%s - Confirmed password is not matched (usr = '%s')", logPrefix, currAcc.usr);
+        printf("Confirmed password is not matched!\n", currAcc.usr);
     }
-    close(mainThreadSendSockFD);
+
+    printf("Press <Enter> to return main menu...");
+    getchar();
 }
+
+void menu () {
+    int endChoice;
+    int choice;
+    char choiceStr[0];
+    int sockfd;
+
+    sockfd = getTCPSockfd(SERVERADDR, SERVERPORT);
+    do {
+        clearCL();
+        printf("1. Sign up\n");
+        printf("2. Login\n");
+        printf("0. Quit\n");
+        printf("------------------------\n");
+        do {
+            endChoice = 1;
+            printf("[+] Your choice: ");
+            scanf("%s", choiceStr);
+            clearBuffer();
+            if(isalpha(choiceStr[0])) {
+                choice = choiceStr[0];
+            } else if (isdigit(choiceStr[0])) {
+                choice = atoi(choiceStr);
+            } else {
+                choice = -1;
+            }
+
+            if (choice == 0) {
+                clientState = EXIT;
+            } else if (choice == 1) {
+                signup(sockfd);
+            } else if (choice == 2) {
+                login(sockfd);
+            } else {
+                printf("[x] Invalid option, enter again!\n");
+                endChoice = 0;
+            }
+        } while (endChoice == 0);
+    } while (clientState != EXIT);
+    close(sockfd);
+}
+
+
 
 int main(int argc, char **argv) {
     pthread_t tid;
@@ -655,7 +786,7 @@ int main(int argc, char **argv) {
     pthread_mutex_init(&chatLstMutex, NULL);
     
     // thread for receive chat message
-    pthread_create(&tid, NULL, &clientMsgHandler, NULL);
+    pthread_create(&tid, NULL, &clientMsgReceiver, NULL);
 
     // wait for at most 200*50ms = 10s to setup client address (store in currAcc.usrAddr)
     while (cliSockState != READY && cliSockStateCnt < timeCount) {
@@ -670,7 +801,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    login();
+    menu();
     
     closelog();
     pthread_mutex_destroy(&onlineLstMutex);

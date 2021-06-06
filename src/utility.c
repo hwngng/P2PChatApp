@@ -12,6 +12,7 @@
 const char* tokenLetter = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const char* online_account_t_format_str = "%s %hu %u %hu";
 const char* auth_account_t_format_str = "%s %s %hu %u %hu";
+const char* signup_account_t_format_str = "%s %s";
 const char* access_account_t_format_str = "%s %s";
 const char* hi_msg_format_str = "%s %s";
 
@@ -164,6 +165,19 @@ account_t* deserializeAuthAccount (account_t* acc, char* accBuff) {
     return acc;
 }
 
+int serializeSignupAccount (char* accBuff, const account_t* acc) {
+    sprintf(accBuff, signup_account_t_format_str, acc->usr, acc->pwd);
+
+    return strlen(accBuff)+1;       // include NULL terminate char
+}
+
+account_t* deserializeSignupAccount (account_t* acc, char* accBuff) {
+    memset(acc, 0, sizeof(*acc));
+    sscanf(accBuff, signup_account_t_format_str, acc->usr, acc->pwd);
+    
+    return acc;
+}
+
 int serializeAccessAccount (char* accBuff, const account_t* acc) {
     sprintf(accBuff, access_account_t_format_str, acc->usr, acc->token);
 
@@ -253,6 +267,79 @@ chat_msg_t* deserializeChatMsg (chat_msg_t* msg, char* msgBuff, int msgLen) {
     return msg;
 }
 
+int serializeChatMsgStorage (char* msgBuff, const chat_msg_t* msg) {
+    int fromLen = strlen(msg->from);
+    int toLen = strlen(msg->to);
+    int txtLen = strlen(msg->txt);
+    int timeSize;
+    char atStr[20];
+    sprintf(atStr, "%ld", msg->at);
+    timeSize = strlen(atStr);
+    
+    int totalSize = 0;
+    memcpy(msgBuff + totalSize, msg->from, fromLen);
+    totalSize += fromLen;
+    msgBuff[totalSize++] = 0;
+
+    memcpy(msgBuff + totalSize, msg->to, toLen);
+    totalSize += toLen;
+    msgBuff[totalSize++] = 0;
+    
+    memcpy(msgBuff + totalSize, msg->txt, txtLen);
+    totalSize += txtLen;
+    msgBuff[totalSize++] = 0;
+
+    memcpy(msgBuff + totalSize, atStr, timeSize);
+    totalSize += timeSize;
+    msgBuff[totalSize] = 0;
+
+    return totalSize;
+}
+
+chat_msg_t* deserializeChatMsgStorage (chat_msg_t* msg, char* msgBuff, int msgLen) {
+    memset(msg, 0, sizeof(*msg));
+    int i = 0;
+    int j = 0;
+    char buf[20];
+
+    while (i < msgLen && msgBuff[i] != 0) {
+        msg->from[j++] = msgBuff[i];
+        ++i;
+    }
+    msg->from[j] = 0;
+
+    ++i;
+    j = 0;
+    while (i < msgLen && msgBuff[i] != 0) {
+        msg->to[j++] = msgBuff[i];
+        ++i;
+    }
+    msg->to[j] = 0;
+
+    ++i;
+    j = 0;
+    while (i < msgLen && msgBuff[i] != 0) {
+        msg->txt[j++] = msgBuff[i];
+        ++i;
+    }
+    msg->txt[j] = 0;
+
+    ++i;
+    j = 0;
+    while (i < msgLen && msgBuff[i] != 0) {
+        buf[j++] = msgBuff[i];
+        ++i;
+    }
+    buf[j] = 0;
+    msg->at = atoi(buf);
+
+    if (i != msgLen) {
+        printf("Error: Invalid chat message storage string format %d %d\n", i, msgLen);
+    }
+    
+    return msg;
+}
+
 int makeHIMsg (char *msgBuff, char *usrBuff, char *tokenBuff) {
     net_msg_t msg;
     
@@ -271,4 +358,13 @@ char* extractHIMsg (char *usrBuff, char *tokenBuff, char *msgBuff) {
     sscanf(msg.payload, hi_msg_format_str, usrBuff, tokenBuff);
 
     return usrBuff;
+}
+
+char* getMsgFilePath (char* buf, char* usr) {
+    strcpy(buf, msgFilePath);
+    strcat(buf, "_");
+    strcat(buf, usr);
+    strcat(buf, ".txt");
+
+    return buf;
 }

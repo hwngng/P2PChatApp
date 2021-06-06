@@ -19,14 +19,14 @@ accNode_t* readAccountList (accNode_t* head, char* filePath) {
             fscanf(fp, "%s%s%hhd", acc->usr, acc->pwd, &acc->status);
             acc->logCnt = 0;
             node = createNode(acc);
-            insertNode(head, node);
+            insertNodeHead(head, node);
         }
-        fclose(fp);
     } else {
         sprintf(err, "Cannot open %s for reading ", filePath);
         perror(err);
     }
 
+    fclose(fp);
     return head;
 }
 
@@ -40,7 +40,68 @@ int saveAccountList (accNode_t* head, char* filePath) {
         i = head->next;
         while(i != NULL) {
             fprintf(fp, "%s %s %d\n", i->acc->usr, i->acc->pwd, i->acc->status);
+            i = i->next;
         }
+    } else {
+        sprintf(err, "Cannot open %s for writing ", filePath);
+        perror(err);
+        ret = -1;
+    }
+
+    fclose(fp);
+    return ret;
+}
+
+chat_msg_node_t* readConversation (chat_msg_node_t* head, char* currUsr, char* opponentUsr, char* filePath) {
+    FILE* fp = fopen(filePath, "rb");
+    char err[200];
+    chat_msg_t* msg;
+    char buf[PAYLOADSIZE];
+    int msgLen;
+    int insert = 0;
+    int issuccess;
+
+    if (fp != NULL) {
+        msg = (chat_msg_t*) malloc(sizeof(*msg));
+        while(!feof(fp)) {
+            issuccess = fread(&msgLen, sizeof(msgLen), 1, fp);
+            if (issuccess) {
+                insert = 0;
+                fread(buf, 1, msgLen, fp);
+                deserializeChatMsgStorage(msg, buf, msgLen);
+                if ((strcasecmp(msg->from, currUsr) == 0 && strcasecmp(msg->to, opponentUsr) == 0)
+                    ||(strcasecmp(msg->from, opponentUsr) == 0 && strcasecmp(msg->to, currUsr) == 0)) {
+                    insertMsgNodeHead(head, createMsgNode(msg));
+                    msg = (chat_msg_t*) malloc(sizeof(*msg));
+                    insert = 1;
+                }
+            }
+        }
+        if (!insert) {
+            free(msg);
+        }
+        fclose(fp);
+    } else {
+        sprintf(err, "Cannot open %s for reading ", filePath);
+        perror(err);
+    }
+
+    reverseMsgLinkedList(head);
+    return head;
+}
+
+int appendChatFile (chat_msg_t* msg, char* filePath) {
+    FILE* fp = fopen(filePath, "ab");
+    int ret = 0;
+    char buf[PAYLOADSIZE];
+    int msgLen;
+    char err[200];
+
+    if (fp != NULL) {
+        msgLen = serializeChatMsgStorage(buf, msg);
+        fwrite(&msgLen, sizeof(msgLen), 1, fp);
+        fwrite(buf, 1, msgLen, fp);
+        fclose(fp);
     } else {
         sprintf(err, "Cannot open %s for writing ", filePath);
         perror(err);

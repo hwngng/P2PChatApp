@@ -35,6 +35,10 @@ int serializeAuthAccount (char* accBuff, const account_t* acc);
 
 account_t* deserializeAuthAccount (account_t* acc, char* accBuff);
 
+int serializeSignupAccount (char* accBuff, const account_t* acc);
+
+account_t* deserializeSignupAccount (account_t* acc, char* accBuff);
+
 int serializeAccessAccount (char* accBuff, const account_t* acc);
 
 account_t* deserializeAccessAccount (account_t* acc, char* accBuff);
@@ -43,8 +47,14 @@ int serializeChatMsg (char* msgBuff, const chat_msg_t* msg);
 
 chat_msg_t* deserializeChatMsg (chat_msg_t* msg, char* msgBuff, int msgLen);
 
+int serializeChatMsgStorage (char* msgBuff, const chat_msg_t* msg);
+
+chat_msg_t* deserializeChatMsgStorage (chat_msg_t* msg, char* msgBuff, int msgLen);
+
 int makeHIMsg (char *msgBuff, char *usrBuff, char *tokenBuff);
 
 char* extractHIMsg (char *usrBuff, char *tokenBuff, char *msgBuff);
+
+char* getMsgFilePath (char* buf, char* usr);
 
 #endif // !UTILITY_H

@@ -8,6 +8,10 @@ accNode_t* readAccountList (accNode_t* head, char* filePath);
 
 int saveAccountList (accNode_t* head, char* filePath);
 
+chat_msg_node_t* readConversation (chat_msg_node_t* head, char* currUsr, char* opponentUsr, char* filePath);
+
+int appendChatFile (chat_msg_t* msg, char* filePath);
+
 int sendBuffer (int sockfd, const char* buffer, int bufferLen);
 
 int recvBuffer (int sockfd, char* buffer, int msgLen);

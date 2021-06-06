@@ -22,7 +22,7 @@
 #define REGISTER 7
 // Register state
 #define REGSUCCESS 77
-#define REGDUP
+#define REGDUP -77
 // HI message
 #define HI 5
 // Client request to connect
@@ -67,7 +67,6 @@ typedef struct {
     char status;
     char logCnt;
     char offCnt;
-    int sendSockFD;
 } account_t;
 
 typedef struct {

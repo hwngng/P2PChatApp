@@ -83,7 +83,7 @@ int processLogic (int connfd) {
 
                                 p = createNode(reqAcc);
                                 pthread_mutex_lock(&onlineLstMutex);
-                                insertNode(onlineLst, p);
+                                insertNodeHead(onlineLst, p);
                                 pthread_mutex_unlock(&onlineLstMutex);
 
                                 syslog(LOG_INFO, "User: %s. Successfully login at %s (Access token: %s)", reqAcc->usr, timeStr, reqAcc->token);
@@ -150,6 +150,27 @@ int processLogic (int connfd) {
                 }
                 if (sentBytes > 0) {
                     responseMsg.type = END;
+                    responseMsg.len = 0;
+                    sendMsg(connfd, &responseMsg);
+                }
+                break;
+            case REGISTER:
+                deserializeSignupAccount(reqAcc, requestMsg.payload);
+                syslog(LOG_DEBUG, "Received REGISTER message (usr = %s, strlen(pwd) = %d, usrAddr = (%s:%d))",
+                        reqAcc->usr, strlen(reqAcc->pwd), inet_ntoa(reqAcc->usrAddr.sin_addr), htons(reqAcc->usrAddr.sin_port));
+                foundNode = searchAccount(accLst, reqAcc->usr);
+                if (foundNode == NULL) {
+                    reqAcc->status = ACTIVE;
+                    pthread_mutex_lock(&accLstMutex);
+                    insertNodeHead(accLst, createNode(reqAcc));
+                    saveAccountList(accLst, accountFilePath);
+                    pthread_mutex_unlock(&accLstMutex);
+                    responseMsg.type = REGSUCCESS;
+                    responseMsg.len = 0;
+                    sendMsg(connfd, &responseMsg);
+                    syslog(LOG_INFO, "Add account %s to account list", reqAcc->usr);
+                } else {
+                    responseMsg.type = REGDUP;
                     responseMsg.len = 0;
                     sendMsg(connfd, &responseMsg);
                 }
