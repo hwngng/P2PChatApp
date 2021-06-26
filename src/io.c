@@ -11,12 +11,17 @@ accNode_t* readAccountList (accNode_t* head, char* filePath) {
     char err[200];
     account_t* acc;
     accNode_t* node;
+    int ret;
 
     if (fp != NULL) {
         while(!feof(fp)) {
             acc = (account_t*) malloc(sizeof(*acc));
             memset(acc, 0, sizeof(*acc));
-            fscanf(fp, "%s%s%hhd", acc->usr, acc->pwd, &acc->status);
+            ret = fscanf(fp, "%s%s%hhd", acc->usr, acc->pwd, &acc->status);
+            if (ret < 3) {
+                free(acc);
+                break;
+            }
             acc->logCnt = 0;
             node = createNode(acc);
             insertNodeHead(head, node);

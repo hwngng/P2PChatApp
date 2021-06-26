@@ -54,11 +54,25 @@ void freeNode (accNode_t* p) {
     free(p);
 }
 
+void freeNodeWithoutData (accNode_t* p) {
+    if (p == NULL) return;
+    free(p);
+}
+
 void freeLinkedList (accNode_t* head) {
     accNode_t* i = head;
     while (i != NULL) {
         accNode_t* p = i->next;
         freeNode(i);
+        i = p;
+    }
+}
+
+void freeLinkedListWithoutData (accNode_t* head) {
+    accNode_t* i = head;
+    while (i != NULL) {
+        accNode_t* p = i->next;
+        freeNodeWithoutData(i);
         i = p;
     }
 }

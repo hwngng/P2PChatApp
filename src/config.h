@@ -17,7 +17,7 @@
 #define MAXOFFLINE 4        // MAINTAININTV count
 #define MAINTAININTV 2      // Update online list each 2 secs
 #define HIMSGINTV 2         // Send HI message each 2 secs
-#define ONLINELSTINTV 10    // Retrieve online list 10 secs
+#define ONLINELSTINTV 8    // Retrieve online list 8 secs
 
 #define STX 2               // Start of text character
 #define ETX 3               // End of text character

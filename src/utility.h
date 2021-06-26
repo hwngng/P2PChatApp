@@ -31,6 +31,10 @@ int serializeOnlineAccount (char* accBuff, const account_t* acc);
 
 account_t* deserializeOnlineAccount (account_t* acc, char* accBuff);
 
+int serializeChatAccount (char* accBuff, const account_t* acc);
+
+account_t* deserializeChatAccount (account_t* acc, char* accBuff);
+
 int serializeAuthAccount (char* accBuff, const account_t* acc);
 
 account_t* deserializeAuthAccount (account_t* acc, char* accBuff);

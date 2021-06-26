@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <time.h>
 #include "config.h"
+#include <gtk/gtk.h>
 
 // Buffer size
 #define USRLEN 50
@@ -15,6 +16,7 @@
 // Type of data in payload
 #define ACCOUNT 0
 #define CHATMSG 1
+#define DISCONNECT -11
 #define ONLINELIST 4
 // Client request
 #define LOGIN 2
@@ -30,7 +32,13 @@
 // Connect response
 #define ACCEPT 66
 #define REJECT -66
+#define CANCEL -67
+// Verify user
+#define VERIFY 8
+#define VALID 88
+#define INVALID -88
 // Ending message
+#define ACK 9 
 #define END -1
 // Bad request
 #define BADREQ -126
@@ -57,7 +65,12 @@
 
 // Client state
 #define CHATTING 0
+#define CONNECTING 1
 #define EXIT -2
+
+// Message direction
+#define SEND 0
+#define RECV 1
 
 typedef struct {
     char usr[USRLEN];
@@ -67,6 +80,8 @@ typedef struct {
     char status;
     char logCnt;
     char offCnt;
+    GtkVBox* chatVBox;
+    GtkWindow* chatWnd;
 } account_t;
 
 typedef struct {

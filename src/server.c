@@ -21,6 +21,9 @@
 
 #define BACKLOG 20
 
+char servAddr[30];
+int servPort;
+int udpTrackingPort;
 int listenfd;
 
 accNode_t* accLst;
@@ -123,14 +126,16 @@ int processLogic (int connfd) {
                 syslog(LOG_DEBUG, "Received LOGOUT message (usr = %s, token = %d)", reqAcc->usr, reqAcc->token);
                 foundNode = searchAccount(onlineLst, reqAcc->usr);
                 if (foundNode != 0) {
-                    syslog(LOG_INFO, "Remove account %s from online list", foundNode->acc->usr);
-                    pthread_mutex_lock(&onlineLstMutex);
-                    foundNode->acc->token[0] = 0;
-                    removeAccount(onlineLst, foundNode->acc->usr);
-                    pthread_mutex_unlock(&onlineLstMutex);
-                    responseMsg.type = END;
-                    responseMsg.len = 0;
-                    sendMsg(connfd, &responseMsg);
+                    if (strcmp(reqAcc->token, foundNode->acc->token) == 0) {
+                        syslog(LOG_INFO, "Remove account %s from online list", foundNode->acc->usr);
+                        pthread_mutex_lock(&onlineLstMutex);
+                        foundNode->acc->token[0] = 0;
+                        removeAccount(onlineLst, foundNode->acc->usr);
+                        pthread_mutex_unlock(&onlineLstMutex);
+                        responseMsg.type = END;
+                        responseMsg.len = 0;
+                        sendMsg(connfd, &responseMsg);
+                    }
                 } else {
                     syslog(LOG_INFO, "Cannot find user %s in online list", reqAcc->usr);
                 }
@@ -156,6 +161,7 @@ int processLogic (int connfd) {
                 break;
             case REGISTER:
                 deserializeSignupAccount(reqAcc, requestMsg.payload);
+                printf("|%s|\n", reqAcc->usr);
                 syslog(LOG_DEBUG, "Received REGISTER message (usr = %s, strlen(pwd) = %d, usrAddr = (%s:%d))",
                         reqAcc->usr, strlen(reqAcc->pwd), inet_ntoa(reqAcc->usrAddr.sin_addr), htons(reqAcc->usrAddr.sin_port));
                 foundNode = searchAccount(accLst, reqAcc->usr);
@@ -174,6 +180,18 @@ int processLogic (int connfd) {
                     responseMsg.len = 0;
                     sendMsg(connfd, &responseMsg);
                 }
+                break;
+            case VERIFY:
+                deserializeAccessAccount(reqAcc, requestMsg.payload);
+                foundNode = searchAccount(onlineLst, reqAcc->usr);
+                memset(&responseMsg, 0, sizeof(responseMsg));
+                responseMsg.type = INVALID;
+                responseMsg.len = 0;
+                if (foundNode != NULL && strcmp(foundNode->acc->token, reqAcc->token) == 0) {
+                    responseMsg.type = VALID;
+                    responseMsg.len = serializeChatAccount(responseMsg.payload, foundNode->acc);
+                }
+                sendMsg(connfd, &responseMsg);
                 break;
             default:
                 syslog(LOG_DEBUG, "From client (%s:%d) recevied unhandled message type = %d", inet_ntoa(cliaddr.sin_addr), htons(cliaddr.sin_port), requestMsg.type);
@@ -213,21 +231,23 @@ int startServer () {
     // Initialize server socket address
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(SERVERADDR);
-    servaddr.sin_port = htons(SERVERPORT);
+    servaddr.sin_addr.s_addr = inet_addr(servAddr);
+    servaddr.sin_port = htons(servPort);
 
     // Bind socket to an address
     if (bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {
-        syslog(LOG_ERR, "Bind failed on address %s:%d", SERVERADDR, SERVERPORT);
+        syslog(LOG_ERR, "Bind failed on address %s:%d", servAddr, servPort);
+        perror("Bind TCP error: ");
         return EXIT_FAILURE;
     }
+    printf("TCP server start on address (%s:%d)\n", servAddr, servPort);
 
     // Listen
     if (listen(listenfd, BACKLOG) < 0) {
         syslog(LOG_ERR, "Listen failed on socket %d", listenfd);
         return EXIT_FAILURE;
     }
-    syslog(LOG_INFO, "Server started on address %s:%d", SERVERADDR, SERVERPORT);
+    syslog(LOG_INFO, "Server started on address %s:%d", servAddr, servPort);
 
     clients[0].fd = listenfd;
     clients[0].events = POLLRDNORM;
@@ -354,12 +374,14 @@ void* hiMsgTracking (void* none) {
     }
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(UDPTRACKINGADDR);
-    servaddr.sin_port = htons(UDPTRACKINGPORT);
+    servaddr.sin_addr.s_addr = inet_addr(servAddr);
+    servaddr.sin_port = htons(udpTrackingPort);
     if (bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) >= 0) {
-        syslog(LOG_INFO, "HI message tracking - Started on address %s:%d", UDPTRACKINGADDR, UDPTRACKINGPORT);
+        syslog(LOG_INFO, "HI message tracking - Started on address %s:%d", servAddr, udpTrackingPort);
+        printf("UDP Tracking server start on address (%s:%d)\n", servAddr, udpTrackingPort);
     } else {
-        syslog(LOG_ERR, "HI message tracking - Bind failed on address %s:%d (stderr: %s)", UDPTRACKINGADDR, UDPTRACKINGPORT, strerror(errno));
+        syslog(LOG_ERR, "HI message tracking - Bind failed on address %s:%d (stderr: %s)", servAddr, udpTrackingPort, strerror(errno));
+        perror("Bind UDP error: ");
         exit(EXIT_FAILURE);
     }
 
@@ -389,6 +411,14 @@ int main(int argc, char** argv) {
     pthread_t tid1, tid2;
     
     openlog("P2P Chat Server", LOG_PID, LOG_USER);
+
+    if (argc < 4) {
+        printf("You must specify server address, port number for server TCP and UDP");
+        return 0;
+    }
+    strcpy(servAddr, argv[1]);
+    servPort = atoi(argv[2]);
+    udpTrackingPort = atoi(argv[3]);
     
     accLst = createNode(NULL);
     onlineLst = createNode(NULL);

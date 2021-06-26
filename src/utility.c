@@ -11,6 +11,7 @@
 
 const char* tokenLetter = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const char* online_account_t_format_str = "%s %hu %u %hu";
+const char* chat_account_t_format_str = "%s %s %hu %u %hu";
 const char* auth_account_t_format_str = "%s %s %hu %u %hu";
 const char* signup_account_t_format_str = "%s %s";
 const char* access_account_t_format_str = "%s %s";
@@ -145,6 +146,21 @@ int serializeOnlineAccount (char* accBuff, const account_t* acc) {
 account_t* deserializeOnlineAccount (account_t* acc, char* accBuff) {
     memset(acc, 0, sizeof(*acc));
     sscanf(accBuff, online_account_t_format_str, acc->usr,
+                                                &acc->usrAddr.sin_family, &acc->usrAddr.sin_addr.s_addr, &acc->usrAddr.sin_port);
+    
+    return acc;
+}
+
+int serializeChatAccount (char* accBuff, const account_t* acc) {
+    sprintf(accBuff, chat_account_t_format_str, acc->usr, acc->token,
+                                                acc->usrAddr.sin_family, acc->usrAddr.sin_addr.s_addr, acc->usrAddr.sin_port);
+
+    return strlen(accBuff)+1;       // include NULL terminate char
+}
+
+account_t* deserializeChatAccount (account_t* acc, char* accBuff) {
+    memset(acc, 0, sizeof(*acc));
+    sscanf(accBuff, chat_account_t_format_str, acc->usr, acc->token,
                                                 &acc->usrAddr.sin_family, &acc->usrAddr.sin_addr.s_addr, &acc->usrAddr.sin_port);
     
     return acc;

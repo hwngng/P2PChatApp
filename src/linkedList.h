@@ -26,7 +26,11 @@ accNode_t* searchAccount (accNode_t* head, const char* usr);
 
 void freeNode (accNode_t* p);
 
+void freeNodeWithoutData (accNode_t* p);
+
 void freeLinkedList (accNode_t* head);
+
+void freeLinkedListWithoutData (accNode_t* head);
 
 int removeAccount (accNode_t* head, const char* usr);
 

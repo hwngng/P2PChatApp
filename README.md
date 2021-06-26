@@ -22,3 +22,5 @@ Cannot read `db/account.txt` if run from other folder.
 We will debug via `syslog`. Monitor syslog file with those commands:
 * For server: `tail -f -n -300 /var/log/syslog | grep "P2P Chat Server"`
 * For client: `tail -f -n -300 /var/log/syslog | grep "P2P Chat Client"`
+### Demo
+https://youtu.be/U_aO7b1js8g
